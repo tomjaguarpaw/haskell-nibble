@@ -9,7 +9,24 @@ import qualified System.Posix.Files as PF
 import qualified System.Process as P
 import qualified System.Directory as D
 
-type N = R.ReaderT Params IO
+newtype N a = N (R.ReaderT Params IO a)
+
+unN :: N a -> R.ReaderT Params IO a
+unN (N a) = a
+
+ask :: N Params
+ask = N (R.ask)
+
+instance Functor N where
+  fmap f = N . fmap f . unN
+
+instance Monad N where
+  return = N . return
+  m >>= f = N (unN m >>= (unN . f))
+
+liftIO :: IO a -> N a
+liftIO = N . lift
+
 
 data Params = Params { pHeapDir :: String }
 
@@ -28,13 +45,13 @@ data PackageDBList = PackageDBList (Directory Heap) deriving Show
 
 emptyDirectoryPreHeap :: N (Directory PreHeap)
 emptyDirectoryPreHeap = do
-  heapDir <- fmap pHeapDir R.ask
-  lift $ do
+  heapDir <- fmap pHeapDir ask
+  liftIO $ do
     newDir <- T.createTempDirectory heapDir "heapObject"
     return (Directory newDir)
   
 createFile :: Directory PreHeap -> String -> String -> N ()
-createFile (Directory dir) filename = lift . IO.writeFile (dir ++ "/" ++ filename) 
+createFile (Directory dir) filename = liftIO . IO.writeFile (dir ++ "/" ++ filename) 
 
 createEmptyPackageDB :: N (PackageDB PreHeap)
 createEmptyPackageDB = do
@@ -51,10 +68,10 @@ directoryFilename (Directory n) = n
 
 createHeapLink :: Directory PreHeap -> String -> Object Heap -> N ()
 createHeapLink (Directory dir) linkName object =
-  lift (PF.createSymbolicLink (objectFilename object) (dir ++ "/" ++ linkName))
+  liftIO (PF.createSymbolicLink (objectFilename object) (dir ++ "/" ++ linkName))
 
 runN :: Params -> N a -> IO a
-runN = flip R.runReaderT
+runN p (N a) = R.runReaderT a p
 
 runTest :: N a -> IO a
 runTest = runN (Params { pHeapDir = "/home/tom/tmp-nibble-heap" })
@@ -86,7 +103,7 @@ cabalConfigureBuildInstall packagedbs = do
       configure = "cabal configure" ++ packageConfs
       build = "cabal build"
 
-  lift $ do
+  liftIO $ do
     ignoreFIXME $ P.system configure
     ignoreFIXME $ P.system build
 
@@ -97,7 +114,7 @@ cabalConfigureBuildInstall packagedbs = do
       prefix = " --prefix " ++ directoryFilename newdeployment
       install = concat ["cabal install", packageConfs, extrapackageConf, prefix]
 
-  ignoreFIXME (lift (P.system install))
+  ignoreFIXME (liftIO (P.system install))
 
   mapM_ (\(i, PackageDB d) -> createHeapLink newpackagedbdir (show i) (HODirectory d)) (zip [1 :: Int ..] packagedbs)
 
