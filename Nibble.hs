@@ -15,7 +15,7 @@ unN :: N a -> R.ReaderT Params IO a
 unN (N a) = a
 
 ask :: N Params
-ask = N (R.ask)
+ask = N R.ask
 
 instance Functor N where
   fmap f = N . fmap f . unN
@@ -74,7 +74,7 @@ runN :: Params -> N a -> IO a
 runN p (N a) = R.runReaderT a p
 
 runTest :: N a -> IO a
-runTest = runN (Params { pHeapDir = "/home/tom/tmp-nibble-heap" })
+runTest = runN Params { pHeapDir = "/home/tom/tmp-nibble-heap" }
 
 storePackageDBList :: [PackageDB Heap] -> N PackageDBList
 storePackageDBList packagedbs = do
